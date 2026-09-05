@@ -1,0 +1,11 @@
+Bolao.Finance={
+ config:{entryFee:100,finalPerUser:50,regularPerUser:20,playoffPerUser:10,roundsPerUser:20,regularRounds:18,playoffPrizeRounds:3,totalPrizeRounds:21},
+ money(v){return Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})},
+ finalPercentages(n){return n<=10?[100,0,0]:n<=20?[90,10,0]:[80,15,5]},
+ summary(users){const active=users.filter(u=>u.active!==false),n=active.length,c=this.config,percentages=this.finalPercentages(n),finalPool=n*c.finalPerUser;return{participants:n,paid:active.filter(u=>u.paid).length,total:n*c.entryFee,finalPool,regularPool:n*c.regularPerUser,playoffPool:n*c.playoffPerUser,roundPool:n*c.roundsPerUser,roundPrize:n*c.roundsPerUser/c.totalPrizeRounds,percentages,finalPrizes:percentages.map(p=>finalPool*p/100)}},
+ compare(a,b){return b.total-a.total||b.winnerHits-a.winnerHits||b.difficultyHits-a.difficultyHits||b.playoffs-a.playoffs||b.preseason-a.preseason},
+ same(a,b){return a.total===b.total&&a.winnerHits===b.winnerHits&&a.difficultyHits===b.difficultyHits&&a.playoffs===b.playoffs&&a.preseason===b.preseason},
+ roundAwards(rows,prize){if(!rows.length)return[];const max=Math.max(...rows.map(r=>r.points));const winners=rows.filter(r=>r.points===max);return winners.map(w=>({uid:w.uid,name:w.name,amount:prize/winners.length,points:max,tied:winners.length>1}))},
+ accumulatedAwards(rows,pool){if(!rows.length)return[];const sorted=[...rows].sort((a,b)=>this.compare(a,b));const winners=sorted.filter(x=>this.same(x,sorted[0]));return winners.map(w=>({uid:w.uid,name:w.name,amount:pool/winners.length,tied:winners.length>1}))},
+ finalAwards(rows,pool,percents){const sorted=[...rows].sort((a,b)=>this.compare(a,b)),awards=[];let position=0;while(position<sorted.length&&position<3){const anchor=sorted[position],group=sorted.filter((x,i)=>i>=position&&this.same(x,anchor));const occupied=Math.min(group.length,3-position);const percentage=percents.slice(position,position+occupied).reduce((a,b)=>a+b,0);if(percentage>0)group.forEach(x=>awards.push({uid:x.uid,name:x.name,amount:pool*percentage/100/group.length,positions:Array.from({length:occupied},(_,i)=>position+i+1)}));position+=group.length}return awards}
+};
