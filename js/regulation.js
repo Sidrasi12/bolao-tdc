@@ -1,11 +1,11 @@
 Bolao.Regulation = {
   render() {
     Bolao.App.content(`
-      <h1>Regulamento do Bolão NFL 2026</h1>
+      <h1>Regulamento do Bolão TDC 2026</h1>
 
       <div class="card regulation-text">
         <h2>1. Objetivo e participação</h2>
-        <p>1.1. O Bolão NFL 2026 é uma competição recreativa baseada em palpites sobre os jogos e os resultados da temporada da NFL.</p>
+        <p>1.1. O Bolão TDC 2026 é uma competição recreativa baseada em palpites sobre os jogos e os resultados da temporada da NFL.</p>
         <p>1.2. A participação implica a aceitação integral deste regulamento.</p>
         <p>1.3. Cada participante deverá utilizar uma conta individual, identificada por e-mail e senha.</p>
         <p>1.4. O nome informado no cadastro será exibido no cabeçalho, no ranking, nos palpites, nas apurações e nas demais áreas de identificação do participante.</p>
