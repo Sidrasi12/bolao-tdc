@@ -80,7 +80,7 @@ Bolao.Regulation = {
         <p>9.1. Para cada partida, o participante deverá indicar a equipe vencedora e a dificuldade da vitória.</p>
         <p>9.2. VD, Vitória Difícil, corresponde à vitória por diferença de até 10 pontos.</p>
         <p>9.3. VF, Vitória Fácil, corresponde à vitória por diferença superior a 10 pontos.</p>
-        <p>9.4. O palpite será encerrado uma hora antes do horário previsto para o início de cada partida.</p>
+        <p>9.4. O palpite será encerrado 15 minutos antes do horário previsto para o início de cada partida.</p>
         <p>9.5. A ausência de palpite valerá zero ponto e o participante continuará incluído no denominador do fator de correção.</p>
 
         <h2>10. Pontuação dos jogos</h2>
