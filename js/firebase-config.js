@@ -1,7 +1,7 @@
 window.BOLAO_CONFIG = {
   season: 2026,
   preseasonDeadline: '2026-09-09T00:00:00-03:00',
-  lockMinutes: 60,
+  lockMinutes: 15,
   entryFee: 100,
   adminEmails: ['guilhermerasi@gmail.com'],
   firebase: {
