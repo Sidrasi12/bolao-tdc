@@ -19,12 +19,19 @@ Bolao.Admin={
           <button id="process-week">Apurar rodada</button>
           <p class="muted">Processa resultados finais da ESPN ou resultados manuais marcados como finalizados.</p>
         </div>
-        <div class="card"><h3>Status</h3><div id="process-status">Aguardando ação.</div></div>
+        <div class="card">
+          <h3>Distribuição dos palpites</h3>
+          <label>Rodada<select id="summary-week">${Array.from({length:18},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></label>
+          <button id="update-summaries">Atualizar distribuição</button>
+          <p class="muted">Gera somente totais e percentuais dos jogos cujo prazo já encerrou.</p>
+        </div>
       </div>
+      <div class="card" style="margin-top:16px"><h3>Status</h3><div id="process-status">Aguardando ação.</div></div>
       <div class="card" style="margin-top:16px" id="manual-results"><p>Selecione uma rodada e clique em Carregar jogos.</p></div>
       <div class="card" style="margin-top:16px" id="users">Carregando participantes...</div>`);
     document.querySelector('#load-manual').onclick=()=>this.loadManualGames(+document.querySelector('#manual-week').value);
     document.querySelector('#process-week').onclick=()=>this.processWeek(+document.querySelector('#score-week').value);
+    document.querySelector('#update-summaries').onclick=()=>this.updateBetSummaries(+document.querySelector('#summary-week').value);
     await this.loadUsers();
   },
 
@@ -80,13 +87,48 @@ Bolao.Admin={
     try{await Bolao.db.collection('manualResults').doc(`${BOLAO_CONFIG.season}_${this.selectedWeek}_${gameId}`).delete();Bolao.App.toast('Resultado manual removido');await this.loadManualGames(this.selectedWeek)}catch(e){Bolao.App.toast('Erro ao remover: '+e.message)}
   },
 
+  async updateBetSummaries(week){
+    const btn=document.querySelector('#update-summaries'),status=document.querySelector('#process-status');
+    btn.disabled=true;status.textContent='Calculando distribuições agregadas...';
+    try{
+      const games=await Bolao.ESPN.games(week,2);
+      const now=Date.now();
+      const lockedGames=games.filter(g=>now>=new Date(g.date).getTime()-BOLAO_CONFIG.lockMinutes*60000);
+      if(!lockedGames.length)throw Error('Nenhum jogo desta rodada encerrou os palpites.');
+      const users=await this.activeUsers();
+      if(!users.length)throw Error('Nenhum participante ativo encontrado.');
+      const batch=Bolao.db.batch();
+      for(const game of lockedGames){
+        const docId=`${BOLAO_CONFIG.season}_${week}_${game.id}`;
+        const picks=await Promise.all(users.map(async user=>{
+          const d=await Bolao.db.collection('userPredictions').doc(user.uid).collection('games').doc(docId).get();
+          return d.exists?d.data():null;
+        }));
+        const awayCount=picks.filter(p=>p&&p.winner===game.away.abbr).length;
+        const homeCount=picks.filter(p=>p&&p.winner===game.home.abbr).length;
+        const submittedCount=awayCount+homeCount;
+        const missingCount=users.length-submittedCount;
+        const lockAt=firebase.firestore.Timestamp.fromMillis(new Date(game.date).getTime()-BOLAO_CONFIG.lockMinutes*60000);
+        batch.set(Bolao.db.collection('weeklyBetSummaries').doc(docId),{
+          season:BOLAO_CONFIG.season,week,gameId:game.id,
+          awayTeam:game.away.abbr,homeTeam:game.home.abbr,
+          awayCount,homeCount,submittedCount,missingCount,
+          activeParticipants:users.length,
+          awayPercent:submittedCount?+(awayCount*100/submittedCount).toFixed(2):0,
+          homePercent:submittedCount?+(homeCount*100/submittedCount).toFixed(2):0,
+          lockAt,updatedBy:Bolao.Auth.user.uid,
+          updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      await batch.commit();
+      status.innerHTML=`<b>Distribuição atualizada.</b><br>${lockedGames.length} jogo(s) com prazo encerrado, ${users.length} participante(s) ativo(s).`;
+      Bolao.App.toast('Distribuições atualizadas');
+    }catch(e){status.textContent='Erro: '+e.message;Bolao.App.toast('Falha ao atualizar distribuições')}finally{btn.disabled=false}
+  },
+
   async gamesForScoring(week){
     const espnGames=await Bolao.ESPN.games(week,2),manual=await this.manualMap(week);
-    return espnGames.map(g=>{
-      const m=manual[g.id];
-      if(!m||!m.completed)return g;
-      return {...g,completed:true,status:'STATUS_FINAL',manual:true,away:{...g.away,score:Number(m.awayScore)},home:{...g.home,score:Number(m.homeScore)}};
-    });
+    return espnGames.map(g=>{const m=manual[g.id];if(!m||!m.completed)return g;return{...g,completed:true,status:'STATUS_FINAL',manual:true,away:{...g.away,score:Number(m.awayScore)},home:{...g.home,score:Number(m.homeScore)}}});
   },
 
   async processWeek(week){
