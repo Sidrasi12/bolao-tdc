@@ -62,6 +62,13 @@ Bolao.Predictions = {
     });
   },
 
+  formatDate(date) {
+    return date.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short'
+    });
+  },
+
   lockLabel() {
     return BOLAO_CONFIG.lockMinutes === 60
       ? '1 hora antes da partida'
@@ -240,19 +247,32 @@ Bolao.Predictions = {
     const now = Date.now();
     document.querySelector('#games').innerHTML = this.games.length
       ? this.games.map(game => {
-          const locked = now >= new Date(game.date).getTime() - BOLAO_CONFIG.lockMinutes * 60000;
+          const start = new Date(game.date);
+          const lock = new Date(start.getTime() - BOLAO_CONFIG.lockMinutes * 60000);
+          const locked = now >= lock.getTime();
           const pick = this.picks[game.id] || {};
           const publicData = this.publicData?.[game.id] || {};
 
           return `
             <article class="game-card weekly-game-card">
-              <div class="matchup-row">
-                <div class="matchup-team"><img src="${game.away.logo}"><span>${game.away.name}</span></div>
-                <div class="matchup-meta">
-                  <div class="venue">🏟️ ${game.venue}${game.venueCity ? ' · ' + game.venueCity : ''}</div>
-                  <div>${locked ? '🔒 Palpite encerrado' : `🔐 Palpite aberto · fecha ${this.lockLabel()}`}</div>
+              <div class="game">
+                <div class="team">
+                  <img class="team-logo" src="${game.away.logo}" alt="">
+                  ${game.away.name}
                 </div>
-                <div class="matchup-team home"><span>${game.home.name}</span><img src="${game.home.logo}"></div>
+                <div class="game-meta">
+                  <div>Início: ${this.formatDate(start)}</div>
+                  <div><strong>Palpites até: ${this.formatDate(lock)}</strong></div>
+                  <div>Limite: ${this.lockLabel()}</div>
+                  <div class="venue">🏟️ ${game.venue}${game.venueCity ? ' · ' + game.venueCity : ''}</div>
+                  <div>${locked
+                    ? `🔒 Palpite encerrado às ${lock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                    : '🔐 Palpite privado'}</div>
+                </div>
+                <div class="team">
+                  ${game.home.name}
+                  <img class="team-logo" src="${game.home.logo}" alt="">
+                </div>
               </div>
 
               <div class="choices ${locked ? 'locked' : ''}">
