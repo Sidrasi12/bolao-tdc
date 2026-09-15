@@ -1,1 +1,91 @@
-Bolao.ESPN={async games(week=1,type=2){const u=`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates=${BOLAO_CONFIG.season}&seasontype=${type}&week=${week}`,r=await fetch(u,{cache:'no-store'});if(!r.ok)throw Error('Falha ao consultar jogos');const j=await r.json();return(j.events||[]).map(e=>{const c=e.competitions[0],a=c.competitors.find(x=>x.homeAway==='away'),h=c.competitors.find(x=>x.homeAway==='home'),o=(c.odds||[])[0]||{},s=e.status||{},t=s.type||{};return{id:e.id,date:e.date,status:t.name,completed:!!t.completed,state:t.state||'pre',statusDetail:t.shortDetail||t.detail||'',clock:s.displayClock||'',period:+(s.period||0),venue:c.venue?.fullName||'Estádio a definir',venueCity:c.venue?.address?.city||'',spread:o.details||'',away:{name:a.team.displayName,abbr:a.team.abbreviation,logo:a.team.logo,score:+(a.score||0)},home:{name:h.team.displayName,abbr:h.team.abbreviation,logo:h.team.logo,score:+(h.score||0)},playoff:type===3}})},difficulty(g){return Math.abs(g.home.score-g.away.score)>10?'VF':'VD'},spreadText(g){return g.spread||'Spread indisponível'},favorite(g){if(!g.spread)return'';const x=g.spread.toUpperCase();if(x.includes('EVEN')||x.includes('PICK'))return'Sem favorito definido';const a=[g.away.abbr,g.home.abbr].find(v=>x.includes(v.toUpperCase()));return a?(a===g.away.abbr?g.away.name:g.home.name):''}};
+Bolao.ESPN = {
+  normalizeRecord(summary) {
+    const parts = String(summary || '')
+      .split('-')
+      .map(value => Number.parseInt(value, 10));
+
+    if (parts.length < 2 || parts.some(Number.isNaN)) {
+      return 'Recorde indisponível';
+    }
+
+    return `${parts[0]}-${parts[1]}-${parts[2] || 0}`;
+  },
+
+  competitorRecord(competitor) {
+    const records = competitor.records || [];
+    const total = records.find(record => record.type === 'total') || records[0];
+    return this.normalizeRecord(total?.summary);
+  },
+
+  async games(week = 1, type = 2) {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates=${BOLAO_CONFIG.season}&seasontype=${type}&week=${week}`;
+    const response = await fetch(url, { cache: 'no-store' });
+
+    if (!response.ok) throw Error('Falha ao consultar jogos');
+
+    const data = await response.json();
+
+    return (data.events || []).map(event => {
+      const competition = event.competitions[0];
+      const away = competition.competitors.find(item => item.homeAway === 'away');
+      const home = competition.competitors.find(item => item.homeAway === 'home');
+      const odds = (competition.odds || [])[0] || {};
+      const status = event.status || {};
+      const statusType = status.type || {};
+
+      return {
+        id: event.id,
+        date: event.date,
+        status: statusType.name,
+        completed: Boolean(statusType.completed),
+        state: statusType.state || 'pre',
+        statusDetail: statusType.shortDetail || statusType.detail || '',
+        clock: status.displayClock || '',
+        period: Number(status.period || 0),
+        venue: competition.venue?.fullName || 'Estádio a definir',
+        venueCity: competition.venue?.address?.city || '',
+        spread: odds.details || '',
+        away: {
+          name: away.team.displayName,
+          abbr: away.team.abbreviation,
+          logo: away.team.logo,
+          score: Number(away.score || 0),
+          record: this.competitorRecord(away)
+        },
+        home: {
+          name: home.team.displayName,
+          abbr: home.team.abbreviation,
+          logo: home.team.logo,
+          score: Number(home.score || 0),
+          record: this.competitorRecord(home)
+        },
+        playoff: type === 3
+      };
+    });
+  },
+
+  difficulty(game) {
+    return Math.abs(game.home.score - game.away.score) > 10 ? 'VF' : 'VD';
+  },
+
+  spreadText(game) {
+    return game.spread || 'Spread indisponível';
+  },
+
+  favorite(game) {
+    if (!game.spread) return '';
+
+    const text = game.spread.toUpperCase();
+    if (text.includes('EVEN') || text.includes('PICK')) {
+      return 'Sem favorito definido';
+    }
+
+    const abbreviation = [game.away.abbr, game.home.abbr]
+      .find(value => text.includes(value.toUpperCase()));
+
+    if (!abbreviation) return '';
+    return abbreviation === game.away.abbr
+      ? game.away.name
+      : game.home.name;
+  }
+};
