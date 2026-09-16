@@ -133,8 +133,20 @@ const previousCompletenessRenderGames =
   Bolao.Predictions.renderGames.bind(Bolao.Predictions);
 
 Bolao.Predictions.renderGames = function(week) {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const activeElement = document.activeElement;
+
+  if (activeElement && typeof activeElement.blur === 'function') {
+    activeElement.blur();
+  }
+
   const result = previousCompletenessRenderGames(week);
   Bolao.PicksCompleteness.apply();
+
+  window.scrollTo(scrollX, scrollY);
+  requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+
   return result;
 };
 
