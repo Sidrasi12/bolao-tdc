@@ -1,4 +1,35 @@
 Bolao.PicksCompleteness = {
+  anchor: null,
+
+  captureAnchor(event) {
+    const button = event.target.closest('#games .choice');
+    if (!button) return;
+
+    const card = button.closest('.game-card');
+    if (!card) return;
+
+    this.anchor = {
+      gameId: button.dataset.g,
+      top: card.getBoundingClientRect().top
+    };
+  },
+
+  restoreAnchor() {
+    if (!this.anchor) return;
+
+    const button = document.querySelector(
+      `#games .choice[data-g="${CSS.escape(this.anchor.gameId)}"]`
+    );
+    const card = button && button.closest('.game-card');
+
+    if (card) {
+      const difference = card.getBoundingClientRect().top - this.anchor.top;
+      if (Math.abs(difference) > 1) window.scrollBy(0, difference);
+    }
+
+    this.anchor = null;
+  },
+
   state(pick) {
     const hasWinner = Boolean(pick && pick.winner);
     const hasDifficulty = Boolean(
@@ -129,24 +160,17 @@ Bolao.PicksCompleteness = {
   }
 };
 
+document.addEventListener('pointerdown', event => {
+  Bolao.PicksCompleteness.captureAnchor(event);
+}, true);
+
 const previousCompletenessRenderGames =
   Bolao.Predictions.renderGames.bind(Bolao.Predictions);
 
 Bolao.Predictions.renderGames = function(week) {
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
-  const activeElement = document.activeElement;
-
-  if (activeElement && typeof activeElement.blur === 'function') {
-    activeElement.blur();
-  }
-
   const result = previousCompletenessRenderGames(week);
   Bolao.PicksCompleteness.apply();
-
-  window.scrollTo(scrollX, scrollY);
-  requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
-
+  Bolao.PicksCompleteness.restoreAnchor();
   return result;
 };
 
