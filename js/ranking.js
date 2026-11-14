@@ -146,45 +146,81 @@ Bolao.Ranking={
       const final=Bolao.Finance.finalAwards(rows,f.finalPool,f.percentages);
 
       box.innerHTML=`
-        <h2>Premiação estimada</h2>
-        <p><strong>Campeão da temporada regular:</strong> ${reg.map(x=>`${x.name}: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
-        <p><strong>Campeão dos playoffs:</strong> ${play.map(x=>`${x.name}: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
-        <p><strong>Premiação final:</strong> ${final.map(x=>`${x.name}: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
+        <h2>Premiação estimada para todos os participantes</h2>
+        
+        <h3>🏆 Classificação Geral (Final)</h3>
         <div class="table-wrap">
           <table>
-            <tr><th>Fundo</th><th>Valor</th></tr>
-            <tr><td>Premiação final</td><td>${Bolao.Finance.money(f.finalPool)}</td></tr>
-            <tr><td>Campeão da temporada regular</td><td>${Bolao.Finance.money(f.regularPool)}</td></tr>
-            <tr><td>Campeão dos playoffs</td><td>${Bolao.Finance.money(f.playoffPool)}</td></tr>
-            <tr><td>21 rodadas</td><td>${Bolao.Finance.money(f.roundPool)}</td></tr>
+            <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
+            <tbody>
+              ${final.length ? final.map(x=>`<tr><td><b>${x.position}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+
+        <h3>🏈 Campeão da Temporada Regular</h3>
+        <p>${reg.map(x=>`<b>${x.name}</b>: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
+
+        <h3>⭐ Campeão dos Playoffs</h3>
+        <p>${play.map(x=>`<b>${x.name}</b>: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
+
+        <h3>💰 Resumo dos Fundos de Premiação</h3>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Fundo</th><th>Valor Total</th></tr>
+            <tr><td>Premiação Final (Classificação Geral)</td><td>${Bolao.Finance.money(f.finalPool)}</td></tr>
+            <tr><td>Temporada Regular (Acumulado)</td><td>${Bolao.Finance.money(f.regularPool)}</td></tr>
+            <tr><td>Playoffs (Acumulado)</td><td>${Bolao.Finance.money(f.playoffPool)}</td></tr>
+            <tr><td>21 Rodadas (Premiação por rodada)</td><td>${Bolao.Finance.money(f.roundPool)}</td></tr>
           </table>
         </div>
       `;
     }else if(mode==='accumulated_regular'){
       const reg=Bolao.Finance.accumulatedAwards(rows,f.regularPool);
       box.innerHTML=`
-        <h2>Premiação da Temporada Regular</h2>
-        <p>Fundo acumulado: <strong>${Bolao.Finance.money(f.regularPool)}</strong></p>
-        <p><strong>Liderança atual:</strong> ${reg.map(x=>`${x.name}: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
+        <h2>Premiação da Temporada Regular (Acumulado)</h2>
+        <p>Fundo total da temporada regular: <strong>${Bolao.Finance.money(f.regularPool)}</strong></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
+            <tbody>
+              ${reg.length ? reg.map(x=>`<tr><td><b>${x.position}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       `;
     }else if(mode==='accumulated_playoffs'){
       const play=Bolao.Finance.accumulatedAwards(rows,f.playoffPool);
       box.innerHTML=`
-        <h2>Premiação dos Playoffs</h2>
-        <p>Fundo acumulado: <strong>${Bolao.Finance.money(f.playoffPool)}</strong></p>
-        <p><strong>Liderança atual:</strong> ${play.map(x=>`${x.name}: ${Bolao.Finance.money(x.amount)}`).join(' · ')||'A definir'}</p>
+        <h2>Premiação dos Playoffs (Acumulado)</h2>
+        <p>Fundo total dos playoffs: <strong>${Bolao.Finance.money(f.playoffPool)}</strong></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
+            <tbody>
+              ${play.length ? play.map(x=>`<tr><td><b>${x.position}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       `;
     }else{
       const[stage,w]=mode.split('_');
       const eligible=stage==='regular'||(stage==='playoffs'&&+w<=3);
       const a=eligible?Bolao.Finance.roundAwards(rows,f.roundPrize):[];
       box.innerHTML=eligible?`
-        <h2>Prêmio da rodada</h2>
-        <p>Valor total: <strong>${Bolao.Finance.money(f.roundPrize)}</strong></p>
-        <p>${a.length?a.map(x=>`${x.name}: ${Bolao.Finance.money(x.amount)}`).join(' · '):'A definir após a apuração.'}</p>
+        <h2>Prêmio da Rodada</h2>
+        <p>Valor total do prêmio desta rodada: <strong>${Bolao.Finance.money(f.roundPrize)}</strong></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Participante</th><th>Prêmio da Rodada</th></tr></thead>
+            <tbody>
+              ${a.length ? a.map(x=>`<tr><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="2" class="muted">A definir após a apuração da rodada.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       `:`
-        <h2>Premiação da etapa</h2>
-        <p>O Super Bowl pontua nos playoffs e na classificação geral, mas não possui prêmio específico de rodada.</p>
+        <h2>Premiação da Etapa</h2>
+        <p>O Super Bowl pontua nos playoffs e na classificação geral, mas não possui prêmio específico de rodada conforme o regulamento.</p>
       `;
     }
   },
