@@ -9,7 +9,16 @@ Bolao.Dashboard = {
     const elapsed = brasilia.getTime() - weekOneTuesday.getTime();
     const calculated = Math.floor(elapsed / (7 * 24 * 60 * 60 * 1000)) + 1;
 
-    return Math.max(1, Math.min(18, calculated));
+    return Math.max(1, Math.min(22, calculated));
+  },
+
+  getWeekLabel(i) {
+    if (i <= 18) return `Semana ${i}`;
+    if (i === 19) return `Wild Card`;
+    if (i === 20) return `Divisional`;
+    if (i === 21) return `Conferências`;
+    if (i === 22) return `Super Bowl`;
+    return `Semana ${i}`;
   },
 
   async render() {
@@ -25,7 +34,7 @@ Bolao.Dashboard = {
       <div class="grid">
         <div class="card">
           <div class="muted">Rodada atual</div>
-          <div class="metric">${week}</div>
+          <div class="metric">${this.getWeekLabel(week)}</div>
         </div>
         <div class="card">
           <div class="muted">Seus pontos apurados</div>
@@ -38,17 +47,20 @@ Bolao.Dashboard = {
       </div>
 
       <div class="section-title">
-        <h2>Jogos da rodada ${week}</h2>
+        <h2>Jogos da rodada</h2>
         <button id="dashboard-weekly-button">Fazer palpites</button>
       </div>
 
       <div id="dash-games" class="card">Carregando todos os jogos...</div>
     `);
 
-    document.querySelector('#dashboard-weekly-button').onclick = () => {
-      localStorage.setItem('bolao_week', String(week));
-      Bolao.App.navigate('weekly');
-    };
+    const btn = document.querySelector('#dashboard-weekly-button');
+    if (btn) {
+      btn.onclick = () => {
+        localStorage.setItem('bolao_week', String(week));
+        Bolao.App.navigate('weekly');
+      };
+    }
 
     try {
       const [games, scores] = await Promise.all([
@@ -71,42 +83,61 @@ Bolao.Dashboard = {
         0
       );
 
-      document.querySelector('#pending').textContent = pending;
-      document.querySelector('#my-points').textContent = points.toLocaleString(
-        'pt-BR',
-        { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-      );
+      // Verificações de segurança para evitar o erro de propriedade nula
+      const pendingEl = document.querySelector('#pending');
+      const pointsEl = document.querySelector('#my-points');
+      const dashGamesEl = document.querySelector('#dash-games');
 
-      document.querySelector('#dash-games').innerHTML = orderedGames.length
-        ? orderedGames.map(game => `
-            <div class="game-card dashboard-game">
-              <div class="game">
-                <div class="team">
-                  <img src="${game.away.logo}" alt="">
-                  ${game.away.name}
-                </div>
-                <div class="game-meta">
-                  ${new Date(game.date).toLocaleString('pt-BR', {
-                    dateStyle: 'short',
-                    timeStyle: 'short'
-                  })}
-                  <div class="venue">
+      if (pendingEl) pendingEl.textContent = pending;
+      if (pointsEl) {
+        pointsEl.textContent = points.toLocaleString('pt-BR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+
+      if (dashGamesEl) {
+        dashGamesEl.innerHTML = orderedGames.length
+          ? orderedGames.map(game => {
+              const isLive = game.state === 'in';
+              const isCompleted = game.completed || game.state === 'post';
+              return `
+                <div class="game-card dashboard-game" style="margin-bottom:14px; padding:12px; border:1px solid rgba(255,255,255,0.1); border-radius:8px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span class="badge" style="background:${isLive ? '#b30000' : 'rgba(255,255,255,0.1)'}; color:#fff;">
+                      ${isLive ? 'AO VIVO' : (isCompleted ? 'FINALIZADO' : 'PRÉ-JOGO')}
+                    </span>
+                    <span style="font-size:0.85rem; color:var(--muted);">${game.statusDetail || new Date(game.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                  </div>
+                  <div class="game" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="team" style="display:flex; align-items:center; gap:8px;">
+                      <img src="${game.away.logo}" alt="" style="width:24px; height:24px;">
+                      <span>${game.away.name}</span>
+                    </div>
+                    <div style="font-weight:bold; font-size:1.1rem; color:var(--gold, #d4af37);">
+                      ${game.away.score} × ${game.home.score}
+                    </div>
+                    <div class="team" style="display:flex; align-items:center; gap:8px;">
+                      <span>${game.home.name}</span>
+                      <img src="${game.home.logo}" alt="" style="width:24px; height:24px;">
+                    </div>
+                  </div>
+                  <div class="venue" style="font-size:0.8rem; color:var(--muted); margin-top:8px; text-align:center;">
                     🏟️ ${game.venue}${game.venueCity ? ' · ' + game.venueCity : ''}
                   </div>
                 </div>
-                <div class="team">
-                  ${game.home.name}
-                  <img src="${game.home.logo}" alt="">
-                </div>
-              </div>
-            </div>
-          `).join('')
-        : 'Jogos ainda não disponíveis.';
+              `;
+            }).join('')
+          : 'Jogos ainda não disponíveis.';
+      }
     } catch (error) {
-      document.querySelector('#pending').textContent = '--';
-      document.querySelector('#my-points').textContent = '--';
-      document.querySelector('#dash-games').innerHTML =
-        'Não foi possível carregar o painel.';
+      const pendingEl = document.querySelector('#pending');
+      const pointsEl = document.querySelector('#my-points');
+      const dashGamesEl = document.querySelector('#dash-games');
+      
+      if (pendingEl) pendingEl.textContent = '--';
+      if (pointsEl) pointsEl.textContent = '--';
+      if (dashGamesEl) dashGamesEl.innerHTML = 'Não foi possível carregar o painel.';
       console.error('Falha ao carregar o dashboard:', error);
     }
   }
