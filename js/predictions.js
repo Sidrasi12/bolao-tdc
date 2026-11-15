@@ -122,8 +122,24 @@ Bolao.Predictions = {
       const p = this.picks[g.id] || {};
       const summary = this.summaries?.[g.id] || null;
 
+      // Renderiza o placar atualizado se a partida já começou ou terminou
+      const isLiveOrFinished = g.state === 'in' || g.state === 'post' || g.completed;
+      const scoreBoardHtml = isLiveOrFinished ? `
+        <div class="card" style="margin-bottom:12px;border-color:var(--gold);background:rgba(0,0,0,0.2)">
+          <div style="text-align:center;font-size:12px;text-transform:uppercase;color:var(--gold);margin-bottom:4px">
+            ${g.state === 'in' ? '🔴 AO VIVO' : 'Encerrado'} · ${g.statusDetail || g.clock}
+          </div>
+          <div style="display:flex;justify-content:space-around;align-items:center;font-size:18px;font-weight:bold;">
+            <div>${g.away.abbr} <span style="font-size:22px;color:var(--gold);margin-left:6px">${g.away.score}</span></div>
+            <div style="font-size:14px;color:var(--muted)">×</div>
+            <div><span style="font-size:22px;color:var(--gold);margin-right:6px">${g.home.score}</span> ${g.home.abbr}</div>
+          </div>
+        </div>
+      ` : '';
+
       return `
         <article class="game-card">
+          ${scoreBoardHtml}
           <div class="game">
             <div class="team"><img src="${g.away.logo}" alt="${g.away.abbr}">${g.away.name}</div>
             <div class="game-meta">
