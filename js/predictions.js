@@ -1,66 +1,18 @@
-Bolao.Predictions = {
-  gameDoc(week, gameId) {
-    return Bolao.db.collection('userPredictions').doc(Bolao.Auth.user.uid).collection('games').doc(`${BOLAO_CONFIG.season}_${week}_${gameId}`);
-  },
+Bolao.Predictions={
+  gameDoc(week,gameId){return Bolao.db.collection('userPredictions').doc(Bolao.Auth.user.uid).collection('games').doc(`${BOLAO_CONFIG.season}_${week}_${gameId}`)},
+  summaryDoc(week,gameId){return Bolao.db.collection('weeklyBetSummaries').doc(`${BOLAO_CONFIG.season}_${week}_${gameId}`)},
+  async loadWeekly(week,games){const entries=await Promise.all(games.map(async g=>{const d=await this.gameDoc(week,g.id).get();return[g.id,d.exists?{winner:d.data().winner,difficulty:d.data().difficulty}:null]}));return Object.fromEntries(entries.filter(([,v])=>v))},
+  async loadSummaries(week,games){const now=Date.now(),entries=await Promise.all(games.map(async g=>{const lockMs=new Date(g.date).getTime()-BOLAO_CONFIG.lockMinutes*60000;if(now<lockMs)return[g.id,null];try{const d=await this.summaryDoc(week,g.id).get();return[g.id,d.exists?d.data():null]}catch(e){return[g.id,null]}}));return Object.fromEntries(entries)},
+  async saveGame(week,game,pick){const start=firebase.firestore.Timestamp.fromDate(new Date(game.date)),lock=firebase.firestore.Timestamp.fromMillis(start.toMillis()-BOLAO_CONFIG.lockMinutes*60000);await this.gameDoc(week,game.id).set({userId:Bolao.Auth.user.uid,userName:Bolao.Auth.user.name,season:BOLAO_CONFIG.season,week,gameId:game.id,winner:pick.winner||'',difficulty:pick.difficulty||'',gameStart:start,lockAt:lock,updatedAt:firebase.firestore.FieldValue.serverTimestamp()})},
+  formatDate(date){return date.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})},
+  lockLabel(){return BOLAO_CONFIG.lockMinutes===60?'1 hora antes da partida':`${BOLAO_CONFIG.lockMinutes} minutos antes da partida`},
+  percent(v){return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'},
   
-  summaryDoc(week, gameId) {
-    return Bolao.db.collection('weeklyBetSummaries').doc(`${BOLAO_CONFIG.season}_${week}_${gameId}`);
-  },
-
-  async loadWeekly(week, games) {
-    const entries = await Promise.all(games.map(async g => {
-      try {
-        const d = await this.gameDoc(week, g.id).get();
-        return [g.id, d.exists ? { winner: d.data().winner, difficulty: d.data().difficulty } : null];
-      } catch (e) {
-        return [g.id, null];
-      }
-    }));
-    return Object.fromEntries(entries.filter(([, v]) => v));
-  },
-
-  async loadSummaries(week, games) {
-    const now = Date.now();
-    const entries = await Promise.all(games.map(async g => {
-      const lockMs = new Date(g.date).getTime() - BOLAO_CONFIG.lockMinutes * 60000;
-      if (now < lockMs) return [g.id, null];
-      try {
-        const d = await this.summaryDoc(week, g.id).get();
-        return [g.id, d.exists ? d.data() : null];
-      } catch (e) {
-        return [g.id, null];
-      }
-    }));
-    return Object.fromEntries(entries);
-  },
-
-  async saveGame(week, game, pick) {
-    const start = firebase.firestore.Timestamp.fromDate(new Date(game.date));
-    const lock = firebase.firestore.Timestamp.fromMillis(start.toMillis() - BOLAO_CONFIG.lockMinutes * 60000);
-    await this.gameDoc(week, game.id).set({
-      userId: Bolao.Auth.user.uid,
-      userName: Bolao.Auth.user.name,
-      season: BOLAO_CONFIG.season,
-      week,
-      gameId: game.id,
-      winner: pick.winner || '',
-      difficulty: pick.difficulty || '',
-      gameStart: start,
-      lockAt: lock,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  },
-
-  formatDate(date) {
-    return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-  },
-
-  lockLabel() {
-    return BOLAO_CONFIG.lockMinutes === 60 ? '1 hora antes da partida' : `${BOLAO_CONFIG.lockMinutes} minutos antes da partida`;
-  },
-
-  percent(v) {
-    return Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  // Função exigida pelo add-on de atualização inteligente para atualizar placares ao vivo
+  refreshLive() {
+    if (typeof this.weekly === 'function') {
+      this.weekly();
+    }
   },
 
   getWeekLabel(i) {
@@ -72,175 +24,29 @@ Bolao.Predictions = {
     return `Semana ${i}`;
   },
 
-  summaryHtml(game, summary, locked) {
-    if (!locked) return `<div class="notice" style="margin-top:14px">Distribuição dos palpites disponível após o encerramento.</div>`;
-    if (!summary) return `<div class="notice" style="margin-top:14px">Distribuição aguardando atualização da Administração.</div>`;
-    return `<div class="card" style="margin-top:14px;border-color:var(--gold)"><div class="section-title" style="margin:0 0 8px"><h3 style="margin:0">Distribuição dos palpites</h3><span class="badge">Encerrado ${this.lockLabel()}</span></div><div class="table-wrap"><table><thead><tr><th>Escolha</th><th>Quantidade</th><th>Percentual</th></tr></thead><tbody><tr><td>${game.away.name} (${game.away.abbr})</td><td>${summary.awayCount || 0} aposta(s)</td><td>${this.percent(summary.awayPercent)}</td></tr><tr><td>${game.home.name} (${game.home.abbr})</td><td>${summary.homeCount || 0} aposta(s)</td><td>${this.percent(summary.homePercent)}</td></tr><tr><td>Sem palpite</td><td>${summary.missingCount || 0} participante(s)</td><td>—</td></tr></tbody></table></div><div class="muted">Base do percentual: ${summary.submittedCount || 0} palpite(s) enviado(s) · Participantes ativos: ${summary.activeParticipants || 0}</div></div>`;
+  summaryHtml(game,summary,locked){
+    if(!locked)return`<div class="notice" style="margin-top:14px">Distribuição dos palpites disponível após o encerramento.</div>`;
+    if(!summary)return`<div class="notice" style="margin-top:14px">Distribuição aguardando atualização da Administração.</div>`;
+    return`<div class="card" style="margin-top:14px;border-color:var(--gold)"><div class="section-title" style="margin:0 0 8px"><h3 style="margin:0">Distribuição dos palpites</h3><span class="badge">Encerrado ${this.lockLabel()}</span></div><div class="table-wrap"><table><thead><tr><th>Escolha</th><th>Quantidade</th><th>Percentual</th></tr></thead><tbody><tr><td>${game.away.name} (${game.away.abbr})</td><td>${summary.awayCount} aposta(s)</td><td>${this.percent(summary.awayPercent)}</td></tr><tr><td>${game.home.name} (${game.home.abbr})</td><td>${summary.homeCount} aposta(s)</td><td>${this.percent(summary.homePercent)}</td></tr><tr><td>Sem palpite</td><td>${summary.missingCount} participante(s)</td><td>—</td></tr></tbody></table></div><div class="muted">Base do percentual: ${summary.submittedCount} palpite(s) enviado(s) · Participantes ativos: ${summary.activeParticipants}</div></div>`
   },
-
-  async weekly() {
-    const week = Number(localStorage.getItem('bolao_week') || 1);
-    
-    Bolao.App.content(`
-      <div class="section-title">
-        <h1>Palpites semanais</h1>
-        <select id="week" style="width:180px">
-          ${Array.from({ length: 22 }, (_, i) => `<option value="${i + 1}" ${i + 1 === week ? 'selected' : ''}>${this.getWeekLabel(i + 1)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="notice">Seus palpites permanecem privados até o encerramento de cada jogo.</div>
-      <div id="games" class="card" style="margin-top:14px">Carregando jogos...</div>
-    `);
-
-    document.querySelector('#week').onchange = e => {
-      localStorage.setItem('bolao_week', Number(e.target.value));
-      this.weekly();
-    };
-
-    try {
-      this.games = await Bolao.ESPN.games(week);
-      [this.picks, this.summaries] = await Promise.all([
-        this.loadWeekly(week, this.games),
-        this.loadSummaries(week, this.games)
-      ]);
-      this.renderGames(week);
-    } catch (e) {
-      console.error("Erro ao carregar palpites semanais:", e);
-      document.querySelector('#games').innerHTML = `<div class="notice">Não foi possível carregar: ${e.message}</div>`;
-    }
+  async weekly(){
+    const week=+(localStorage.getItem('bolao_week')||1);
+    Bolao.App.content(`<div class="section-title"><h1>Palpites semanais</h1><select id="week" style="width:180px">${Array.from({length:22},(_,i)=>`<option value="${i+1}" ${i+1===week?'selected':''}>${this.getWeekLabel(i+1)}</option>`).join('')}</select></div><div class="notice">Seus palpites permanecem privados até o encerramento de cada jogo.</div><div id="games" class="card" style="margin-top:14px">Carregando jogos...</div>`);
+    document.querySelector('#week').onchange=e=>{localStorage.setItem('bolao_week',e.target.value);this.weekly()};
+    try{this.games=await Bolao.ESPN.games(week);[this.picks,this.summaries]=await Promise.all([this.loadWeekly(week,this.games),this.loadSummaries(week,this.games)]);this.renderGames(week)}catch(e){document.querySelector('#games').innerHTML=`<div class="notice">Não foi possível carregar: ${e.message}</div>`}
   },
-
-  renderGames(week) {
-    const now = Date.now();
-    const container = document.querySelector('#games');
-    if (!container) return;
-
-    container.innerHTML = this.games.length ? this.games.map(g => {
-      const start = new Date(g.date);
-      const lock = new Date(start.getTime() - BOLAO_CONFIG.lockMinutes * 60000);
-      const locked = now >= lock.getTime();
-      const p = this.picks[g.id] || {};
-      const summary = this.summaries?.[g.id] || null;
-
-      // Renderiza o placar atualizado se a partida já começou ou terminou
-      const isLiveOrFinished = g.state === 'in' || g.state === 'post' || g.completed;
-      const scoreBoardHtml = isLiveOrFinished ? `
-        <div class="card" style="margin-bottom:12px;border-color:var(--gold);background:rgba(0,0,0,0.2)">
-          <div style="text-align:center;font-size:12px;text-transform:uppercase;color:var(--gold);margin-bottom:4px">
-            ${g.state === 'in' ? '🔴 AO VIVO' : 'Encerrado'} · ${g.statusDetail || g.clock}
-          </div>
-          <div style="display:flex;justify-content:space-around;align-items:center;font-size:18px;font-weight:bold;">
-            <div>${g.away.abbr} <span style="font-size:22px;color:var(--gold);margin-left:6px">${g.away.score}</span></div>
-            <div style="font-size:14px;color:var(--muted)">×</div>
-            <div><span style="font-size:22px;color:var(--gold);margin-right:6px">${g.home.score}</span> ${g.home.abbr}</div>
-          </div>
-        </div>
-      ` : '';
-
-      return `
-        <article class="game-card">
-          ${scoreBoardHtml}
-          <div class="game">
-            <div class="team"><img src="${g.away.logo}" alt="${g.away.abbr}">${g.away.name}</div>
-            <div class="game-meta">
-              <div>Início: ${this.formatDate(start)}</div>
-              <div><strong>Palpites até: ${this.formatDate(lock)}</strong></div>
-              <div class="muted">Limite: ${this.lockLabel()}</div>
-              <div class="venue">🏟️ ${g.venue}${g.venueCity ? ' · ' + g.venueCity : ''}</div>
-              <div>${locked ? `🔒 Palpite encerrado às ${lock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '🔐 Palpite privado'}</div>
-            </div>
-            <div class="team">${g.home.name}<img src="${g.home.logo}" alt="${g.home.abbr}"></div>
-          </div>
-          <div class="choices ${locked ? 'locked' : ''}">
-            <button class="choice ${p.winner === g.away.abbr || (g.away.abbr === 'TBD' && p.winner === 'away') ? 'selected' : ''}" data-g="${g.id}" data-w="${g.away.abbr}" data-side="away">${g.away.abbr}</button>
-            <button class="choice ${p.winner === g.home.abbr || (g.home.abbr === 'TBD' && p.winner === 'home') ? 'selected' : ''}" data-g="${g.id}" data-w="${g.home.abbr}" data-side="home">${g.home.abbr}</button>
-            <button class="choice ${p.difficulty === 'VD' ? 'selected' : ''}" data-g="${g.id}" data-d="VD">VD</button>
-            <button class="choice ${p.difficulty === 'VF' ? 'selected' : ''}" data-g="${g.id}" data-d="VF">VF</button>
-          </div>
-          ${this.summaryHtml(g, summary, locked)}
-        </article>
-      `;
-    }).join('') : '<p>Nenhum jogo encontrado.</p>';
-
-    document.querySelectorAll('.choice').forEach(b => b.onclick = async () => {
-      const game = this.games.find(g => g.id === b.dataset.g);
-      if (!game) return;
-      const lockMs = new Date(game.date).getTime() - BOLAO_CONFIG.lockMinutes * 60000;
-      if (Date.now() >= lockMs) return Bolao.App.toast('Prazo encerrado');
-      
-      const id = game.id;
-      this.picks[id] = this.picks[id] || {};
-      
-      if (b.dataset.w) {
-        this.picks[id].winner = (b.dataset.w === 'TBD') ? b.dataset.side : b.dataset.w;
-      }
-      if (b.dataset.d) {
-        this.picks[id].difficulty = b.dataset.d;
-      }
-      
-      try {
-        await this.saveGame(week, game, this.picks[id]);
-        this.renderGames(week);
-        Bolao.App.toast('Palpite salvo com segurança');
-      } catch (e) {
-        Bolao.App.toast(e.code === 'permission-denied' ? 'Prazo encerrado ou operação não permitida' : ('Erro ao salvar: ' + e.message));
-      }
-    });
+  renderGames(week){
+    const now=Date.now();
+    document.querySelector('#games').innerHTML=this.games.length?this.games.map(g=>{
+      const start=new Date(g.date),lock=new Date(start.getTime()-BOLAO_CONFIG.lockMinutes*60000),locked=now>=lock.getTime(),p=this.picks[g.id]||{},summary=this.summaries?.[g.id]||null;
+      return`<article class="game-card"><div class="game"><div class="team"><img src="${g.away.logo}">${g.away.name}</div><div class="game-meta"><div>Início: ${this.formatDate(start)}</div><div><strong>Palpites até: ${this.formatDate(lock)}</strong></div><div class="muted">Limite: ${this.lockLabel()}</div><div class="venue">🏟️ ${g.venue}${g.venueCity?' · '+g.venueCity:''}</div><div>${locked?`🔒 Palpite encerrado às ${lock.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:'🔐 Palpite privado'}</div></div><div class="team">${g.home.name}<img src="${g.home.logo}"></div></div><div class="choices ${locked?'locked':''}"><button class="choice ${p.winner===g.away.abbr||(g.away.abbr==='TBD'&&p.winner==='away')?'selected':''}" data-g="${g.id}" data-w="${g.away.abbr}" data-side="away">${g.away.abbr}</button><button class="choice ${p.winner===g.home.abbr||(g.home.abbr==='TBD'&&p.winner==='home')?'selected':''}" data-g="${g.id}" data-w="${g.home.abbr}" data-side="home">${g.home.abbr}</button><button class="choice ${p.difficulty==='VD'?'selected':''}" data-g="${g.id}" data-d="VD">VD</button><button class="choice ${p.difficulty==='VF'?'selected':''}" data-g="${g.id}" data-d="VF">VF</button></div>${this.summaryHtml(g,summary,locked)}</article>`
+    }).join(''):'<p>Nenhum jogo encontrado.</p>';
+    document.querySelectorAll('.choice').forEach(b=>b.onclick=async()=>{const game=this.games.find(g=>g.id===b.dataset.g),lockMs=new Date(game.date).getTime()-BOLAO_CONFIG.lockMinutes*60000;if(Date.now()>=lockMs)return Bolao.App.toast('Prazo encerrado');const id=game.id;this.picks[id]=this.picks[id]||{};if(b.dataset.w)this.picks[id].winner=(b.dataset.w==='TBD')?b.dataset.side:b.dataset.w;if(b.dataset.d)this.picks[id].difficulty=b.dataset.d;try{await this.saveGame(week,game,this.picks[id]);this.renderGames(week);Bolao.App.toast('Palpite salvo com segurança')}catch(e){Bolao.App.toast(e.code==='permission-denied'?'Prazo encerrado ou operação não permitida':('Erro ao salvar: '+e.message))}})
   },
-
-  async preseason() {
-    const ref = Bolao.db.collection('userPredictions').doc(Bolao.Auth.user.uid).collection('preseason').doc(String(BOLAO_CONFIG.season));
-    const snap = await ref.get();
-    const p = snap.exists ? snap.data().picks || {} : {};
-    
-    const divs = [['AFC', 'Leste'], ['AFC', 'Oeste'], ['AFC', 'Sul'], ['AFC', 'Norte'], ['NFC', 'Leste'], ['NFC', 'Oeste'], ['NFC', 'Sul'], ['NFC', 'Norte']];
-    const field = (id, label, filter = {}) => `<label>${label}<select id="${id}">${Bolao.teamOptions(filter)}</select></label>`;
-    
-    Bolao.App.content(`
-      <div class="section-title"><h1>Pré-temporada</h1><span class="badge">Prazo: 11 de setembro, às 23h59</span></div>
-      <div class="notice">Os palpites ficam privados até o prazo final da pré-temporada.</div>
-      <form id="pre-form" class="card" style="margin-top:14px">
-        <div class="form-grid">
-          ${field('champion', 'Campeão do Super Bowl')}
-          ${field('runner', 'Vice-campeão')}
-          ${divs.map(([c, d]) => field(`div_${c}_${d}`, `${c} ${d}`, { conference: c, division: d })).join('')}
-          ${field('worst', 'Pior campanha')}
-          <label>MVP<input id="mvp" placeholder="Nome do jogador"></label>
-        </div>
-        <h3>Wild Cards</h3>
-        <div class="form-grid">
-          ${[1, 2, 3].map(i => field('wcAFC' + i, 'Wildcard AFC ' + i, { conference: 'AFC' })).join('')}
-          ${[1, 2, 3].map(i => field('wcNFC' + i, 'Wildcard NFC ' + i, { conference: 'NFC' })).join('')}
-        </div>
-        <button>Salvar palpites</button>
-      </form>
-    `);
-
-    Object.entries(p).forEach(([k, v]) => {
-      const e = document.getElementById(k);
-      if (e) e.value = v;
-    });
-
-    const deadline = firebase.firestore.Timestamp.fromDate(new Date(BOLAO_CONFIG.preseasonDeadline));
-    if (Date.now() >= deadline.toMillis()) document.querySelector('#pre-form').classList.add('locked');
-    
-    document.querySelector('#pre-form').onsubmit = async e => {
-      e.preventDefault();
-      const picks = {};
-      e.target.querySelectorAll('select, input').forEach(x => picks[x.id] = x.value);
-      try {
-        await ref.set({
-          userId: Bolao.Auth.user.uid,
-          userName: Bolao.Auth.user.name,
-          season: BOLAO_CONFIG.season,
-          deadline,
-          picks,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        Bolao.App.toast('Pré-temporada salva com segurança');
-      } catch (x) {
-        Bolao.App.toast(x.code === 'permission-denied' ? 'Prazo encerrado ou operação não permitida' : ('Erro ao salvar: ' + x.message));
-      }
-    };
+  async preseason(){
+    const ref=Bolao.db.collection('userPredictions').doc(Bolao.Auth.user.uid).collection('preseason').doc(String(BOLAO_CONFIG.season)),snap=await ref.get(),p=snap.exists?snap.data().picks||{}:{};
+    const divs=[['AFC','Leste'],['AFC','Oeste'],['AFC','Sul'],['AFC','Norte'],['NFC','Leste'],['NFC','Oeste'],['NFC','Sul'],['NFC','Norte']],field=(id,label,filter={})=>`<label>${label}<select id="${id}">${Bolao.teamOptions(filter)}</select></label>`;
+    Bolao.App.content(`<div class="section-title"><h1>Pré-temporada</h1><span class="badge">Prazo: 11 de setembro, às 23h59</span></div><div class="notice">Os palpites ficam privados até o prazo final da pré-temporada.</div><form id="pre-form" class="card" style="margin-top:14px"><div class="form-grid">${field('champion','Campeão do Super Bowl')}${field('runner','Vice-campeão')}${divs.map(([c,d])=>field(`div_${c}_${d}`,`${c} ${d}`,{conference:c,division:d})).join('')}${field('worst','Pior campanha')}<label>MVP<input id="mvp" placeholder="Nome do jogador"></label></div><h3>Wild Cards</h3><div class="form-grid">${[1,2,3].map(i=>field('wcAFC'+i,'Wildcard AFC '+i,{conference:'AFC'})).join('')}${[1,2,3].map(i=>field('wcNFC'+i,'Wildcard NFC '+i,{conference:'NFC'})).join('')}</div><button>Salvar palpites</button></form>`);
+    Object.entries(p).forEach(([k,v])=>{const e=document.getElementById(k);if(e)e.value=v});const deadline=firebase.firestore.Timestamp.fromDate(new Date(BOLAO_CONFIG.preseasonDeadline));if(Date.now()>=deadline.toMillis())document.querySelector('#pre-form').classList.add('locked');document.querySelector('#pre-form').onsubmit=async e=>{e.preventDefault();const picks={};e.target.querySelectorAll('select,input').forEach(x=>picks[x.id]=x.value);try{await ref.set({userId:Bolao.Auth.user.uid,userName:Bolao.Auth.user.name,season:BOLAO_CONFIG.season,deadline,picks,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});Bolao.App.toast('Pré-temporada salva com segurança')}catch(x){Bolao.App.toast(x.code==='permission-denied'?'Prazo encerrado ou operação não permitida':('Erro ao salvar: '+x.message))}}
   }
 };
