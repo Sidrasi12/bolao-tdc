@@ -21,7 +21,7 @@ Bolao.ESPN = {
     let seasonType = type !== undefined ? type : 2;
     let espnWeek = week;
 
-    // Se type não foi passado e a semana for de playoffs (19 a 22)
+    // Se o tipo não foi passado explicitamente e a semana for de playoffs (19 a 22)
     if (type === undefined && week > 18) {
       seasonType = 3; // Postseason
       espnWeek = week - 18; // 19 -> 1 (Wild Card), 20 -> 2 (Divisional), etc.
