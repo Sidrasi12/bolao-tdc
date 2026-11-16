@@ -25,20 +25,13 @@ Bolao.Admin={
           <button id="update-summaries">Atualizar distribuição</button>
           <p class="muted">Gera somente totais e percentuais dos jogos cujo prazo já encerrou.</p>
         </div>
-        <div class="card">
-          <h3>Apuração da Pré-temporada</h3>
-          <p class="muted" style="margin-bottom:15px;">Processa os palpites de pré-temporada, tratando erros de digitação (MVP) e computando as pontuações.</p>
-          <button id="process-preseason" class="btn" style="background:#28a745;color:white;padding:10px 15px;border:none;border-radius:4px;font-weight:bold;cursor:pointer;width:100%;">Apurar pré-temporada</button>
-        </div>
       </div>
       <div class="card" style="margin-top:16px"><h3>Status</h3><div id="process-status">Aguardando ação.</div></div>
       <div class="card" style="margin-top:16px" id="manual-results"><p>Selecione uma rodada e clique em Carregar jogos.</p></div>
       <div class="card" style="margin-top:16px" id="users">Carregando participantes...</div>`);
-    
     document.querySelector('#load-manual').onclick=()=>this.loadManualGames(+document.querySelector('#manual-week').value);
     document.querySelector('#process-week').onclick=()=>this.processWeek(+document.querySelector('#score-week').value);
     document.querySelector('#update-summaries').onclick=()=>this.updateBetSummaries(+document.querySelector('#summary-week').value);
-    document.querySelector('#process-preseason').onclick=()=>this.processPreseason();
     await this.loadUsers();
   },
 
@@ -154,63 +147,5 @@ Bolao.Admin={
       for(const s of scores)batch.set(Bolao.db.collection('roundScores').doc(`${roundId}_${s.uid}`),{season:BOLAO_CONFIG.season,week,userId:s.uid,userName:s.name,points:s.weekPoints,winnerHits:s.winnerHits,difficultyHits:s.difficultyHits,processedAt:firebase.firestore.FieldValue.serverTimestamp()});
       await batch.commit();status.innerHTML=`<b>Rodada ${week} apurada.</b><br>${games.length} jogos, sendo ${games.filter(g=>g.manual).length} resultado(s) manual(is), para ${users.length} participantes.`;Bolao.App.toast('Apuração concluída');
     }catch(e){status.textContent='Erro: '+e.message;Bolao.App.toast('Falha na apuração')}finally{btn.disabled=false}
-  },
-
-  // Função inteligente para tratar erros de digitação, espaços e acentos (ex: MVP)
-  normalizarTexto(texto) {
-    if (!texto) return "";
-    return texto
-      .toString()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // Remove acentos
-      .replace(/[^a-z0-9]/g, "")     // Remove espaços e caracteres especiais
-      .trim();
-  },
-
-  async processPreseason(){
-    const btn=document.querySelector('#process-preseason'),status=document.querySelector('#process-status');
-    btn.disabled=true;status.textContent='Apurando pré-temporada...';
-    try{
-      const gabaritoRef=Bolao.db.collection('adminSettings').doc(`preseason_result_${BOLAO_CONFIG.season}`);
-      const gabaritoSnap=await gabaritoRef.get();
-      if(!gabaritoSnap.exists)throw Error('O gabarito oficial da pré-temporada não foi cadastrado (adminSettings/preseason_result_'+BOLAO_CONFIG.season+').');
-      
-      const gabarito=gabaritoSnap.data().picks||{};
-      const users=await this.activeUsers();
-      if(!users.length)throw Error('Nenhum participante ativo encontrado.');
-
-      const batch=Bolao.db.batch();
-      let count=0;
-
-      for(const user of users){
-        const preRef=Bolao.db.collection('userPredictions').doc(user.uid).collection('preseason').doc(String(BOLAO_CONFIG.season));
-        const preSnap=await preRef.get();
-        if(!preSnap.exists)continue;
-
-        const userPicks=preSnap.data().picks||{};
-        let points=0;
-
-        Object.keys(gabarito).forEach(key=>{
-          const oficial=this.normalizarTexto(gabarito[key]);
-          const palpite=this.normalizarTexto(userPicks[key]);
-          if(oficial&&palpite&&oficial===palpite){
-            points+=5; // 5 pontos por acerto na pré-temporada (ajustável se necessário)
-          }
-        });
-
-        batch.update(Bolao.db.collection('users').doc(user.uid),{preseasonPoints:points});
-        count++;
-      }
-
-      await batch.commit();
-      status.innerHTML=`<b>Pré-temporada apurada.</b><br>Processado para ${count} participante(s) com tratamento de grafia.`;
-      Bolao.App.toast('Pré-temporada apurada com sucesso');
-    }catch(e){
-      status.textContent='Erro: '+e.message;
-      Bolao.App.toast('Falha ao apurar pré-temporada');
-    }finally{
-      btn.disabled=false;
-    }
   }
 };
