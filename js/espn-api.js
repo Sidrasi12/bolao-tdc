@@ -17,8 +17,17 @@ Bolao.ESPN = {
     return this.normalizeRecord(total?.summary);
   },
 
-  async games(week = 1, type = 2) {
-    const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates=${BOLAO_CONFIG.season}&seasontype=${type}&week=${week}`;
+  async games(week = 1, type) {
+    let seasonType = type !== undefined ? type : 2;
+    let espnWeek = week;
+
+    // Se type não foi passado e a semana for de playoffs (19 a 22)
+    if (type === undefined && week > 18) {
+      seasonType = 3; // Postseason
+      espnWeek = week - 18; // 19 -> 1 (Wild Card), 20 -> 2 (Divisional), etc.
+    }
+
+    const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates=${BOLAO_CONFIG.season}&seasontype=${seasonType}&week=${espnWeek}`;
     const response = await fetch(url, { cache: 'no-store' });
 
     if (!response.ok) throw Error('Falha ao consultar jogos');
