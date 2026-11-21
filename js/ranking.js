@@ -1,5 +1,37 @@
-Bolao.Ranking={
-  async render(){
+Bolao.Ranking = {
+  preseasonColumns: [
+    { key: 'champion', label: 'Campeão' },
+    { key: 'runner', label: 'Vice-campeão' },
+    { key: 'worst', label: 'Pior time' },
+    { key: 'mvp', label: 'MVP' },
+    { key: 'div_AFC_Leste', label: 'AFC Leste' },
+    { key: 'div_AFC_Oeste', label: 'AFC Oeste' },
+    { key: 'div_AFC_Sul', label: 'AFC Sul' },
+    { key: 'div_AFC_Norte', label: 'AFC Norte' },
+    { key: 'div_NFC_Leste', label: 'NFC Leste' },
+    { key: 'div_NFC_Oeste', label: 'NFC Oeste' },
+    { key: 'div_NFC_Sul', label: 'NFC Sul' },
+    { key: 'div_NFC_Norte', label: 'NFC Norte' },
+    { key: 'wcAFC1', label: 'WC AFC 1' },
+    { key: 'wcAFC2', label: 'WC AFC 2' },
+    { key: 'wcAFC3', label: 'WC AFC 3' },
+    { key: 'wcNFC1', label: 'WC NFC 1' },
+    { key: 'wcNFC2', label: 'WC NFC 2' },
+    { key: 'wcNFC3', label: 'WC NFC 3' }
+  ],
+
+  normalizarTexto(texto) {
+    if (!texto) return '';
+    return texto
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+  },
+
+  async render() {
     Bolao.App.content(`
       <div class="section-title">
         <h1>Ranking e premiação</h1>
@@ -9,10 +41,10 @@ Bolao.Ranking={
           <option value="accumulated_regular">Temporada regular (Acumulado)</option>
           <option value="accumulated_playoffs">Playoffs (Acumulado)</option>
           <optgroup label="Rodadas - Temporada Regular">
-            ${Array.from({length:18},(_,i)=>`<option value="regular_${i+1}">Rodada ${i+1}</option>`).join('')}
+            ${Array.from({ length: 18 }, (_, i) => `<option value="regular_${i + 1}">Rodada ${i + 1}</option>`).join('')}
           </optgroup>
           <optgroup label="Rodadas - Playoffs">
-            ${['Wild Card','Divisional','Finais de Conferência','Super Bowl'].map((x,i)=>`<option value="playoffs_${i+1}">${x}</option>`).join('')}
+            ${['Wild Card', 'Divisional', 'Finais de Conferência', 'Super Bowl'].map((x, i) => `<option value="playoffs_${i + 1}">${x}</option>`).join('')}
           </optgroup>
         </select>
       </div>
@@ -21,112 +53,244 @@ Bolao.Ranking={
       <div class="card" id="awards" style="margin-top:16px"></div>
       <div class="card" id="round-details" style="margin-top:16px"></div>
     `);
-    document.querySelector('#rank-mode').onchange=e=>this.load(e.target.value);
+    document.querySelector('#rank-mode').onchange = e => this.load(e.target.value);
     await this.load('general');
   },
 
-  async source(){
-    const[us,ss,rs,ps]=await Promise.all([
+  async source() {
+    const [us, ss, rs, ps] = await Promise.all([
       Bolao.db.collection('users').get(),
-      Bolao.db.collection('roundScores').where('season','==',BOLAO_CONFIG.season).get(),
-      Bolao.db.collection('roundResults').where('season','==',BOLAO_CONFIG.season).get(),
-      Bolao.db.collectionGroup('preseason').where('season','==',String(BOLAO_CONFIG.season)).get().catch(()=>({docs:[]}))
+      Bolao.db.collection('roundScores').where('season', '==', BOLAO_CONFIG.season).get(),
+      Bolao.db.collection('roundResults').where('season', '==', BOLAO_CONFIG.season).get(),
+      Bolao.db.collectionGroup('preseason').where('season', '==', String(BOLAO_CONFIG.season)).get().catch(() => ({ docs: [] }))
     ]);
-    return{
-      users:us.docs.map(d=>({uid:d.id,...d.data()})).filter(x=>x.active!==false),
-      scores:ss.docs.map(d=>d.data()),
-      roundResults:rs.docs.map(d=>({id:d.id,...d.data()})),
-      preseason:ps.docs.map(d=>({uid:d.ref.parent.parent.id,...d.data()}))
+    return {
+      users: us.docs.map(d => ({ uid: d.id, ...d.data() })).filter(x => x.active !== false),
+      scores: ss.docs.map(d => d.data()),
+      roundResults: rs.docs.map(d => ({ id: d.id, ...d.data() })),
+      preseason: ps.docs.map(d => ({ uid: d.ref.parent.parent.id, ...d.data() }))
     };
   },
 
-  rows(users,scores,mode,preseasonData=[]){
-    if(mode==='general'){
-      return users.map(u=>{
-        const a=scores.filter(x=>x.userId===u.uid);
-        const regular=a.filter(x=>x.stage==='regular'||!x.stage).reduce((s,x)=>s+(x.points||0),0);
-        const playoffs=a.filter(x=>x.stage==='playoffs').reduce((s,x)=>s+(x.points||0),0);
-        const userPre=preseasonData.find(p=>p.uid===u.uid);
-        const preseason=u.preseasonPoints||userPre?.points||0;
-        const winnerHits=a.reduce((s,x)=>s+(x.winnerHits||0),0);
-        const difficultyHits=a.reduce((s,x)=>s+(x.difficultyHits||0),0);
-        const total=+(regular+playoffs+preseason).toFixed(2);
-        return {uid:u.uid,name:u.name||u.email,regular,playoffs,preseason,total,winnerHits,difficultyHits};
+  async loadPreseasonMatrix(users, preseasonData = []) {
+    const gabSnap = await Bolao.db
+      .collection('adminSettings')
+      .doc(`preseason_result_${BOLAO_CONFIG.season}`)
+      .get();
+
+    const gabData = gabSnap.exists ? (gabSnap.data() || {}) : {};
+    const gabarito = gabData.picks || gabData;
+
+    const matrix = await Promise.all(users.map(async u => {
+      const fromGroup = preseasonData.find(p => p.uid === u.uid);
+      let picks = fromGroup?.picks;
+
+      if (!picks) {
+        const preSnap = await Bolao.db
+          .collection('userPredictions')
+          .doc(u.uid)
+          .collection('preseason')
+          .doc(String(BOLAO_CONFIG.season))
+          .get();
+        picks = preSnap.exists ? (preSnap.data().picks || {}) : {};
+      }
+
+      let acertos = 0;
+      let erros = 0;
+      let pontosCalculados = 0;
+      const items = {};
+
+      this.preseasonColumns.forEach(col => {
+        const oficial = gabarito[col.key];
+        const palpite = picks[col.key] || '—';
+        const temOficial = Boolean(oficial && this.normalizarTexto(oficial) !== 'pendente');
+        const acertou = temOficial && this.normalizarTexto(oficial) === this.normalizarTexto(palpite);
+        const pts = acertou ? 5 : 0;
+
+        if (temOficial) {
+          if (acertou) {
+            acertos++;
+            pontosCalculados += pts;
+          } else {
+            erros++;
+          }
+        }
+
+        items[col.key] = {
+          palpite,
+          oficial: temOficial ? oficial : 'Pendente',
+          temOficial,
+          acertou,
+          pts
+        };
+      });
+
+      const total = Number(u.preseasonPoints ?? fromGroup?.points ?? pontosCalculados);
+      return {
+        uid: u.uid,
+        name: u.name || u.email,
+        total,
+        preseason: total,
+        regular: 0,
+        playoffs: 0,
+        winnerHits: acertos,
+        difficultyHits: 0,
+        acertos,
+        erros,
+        items
+      };
+    }));
+
+    return {
+      gabarito,
+      rows: matrix.sort((a, b) => b.total - a.total || b.acertos - a.acertos || a.name.localeCompare(b.name))
+    };
+  },
+
+  rows(users, scores, mode, preseasonData = []) {
+    if (mode === 'general') {
+      return users.map(u => {
+        const a = scores.filter(x => x.userId === u.uid);
+        const regular = a.filter(x => x.stage === 'regular' || !x.stage).reduce((s, x) => s + (x.points || 0), 0);
+        const playoffs = a.filter(x => x.stage === 'playoffs').reduce((s, x) => s + (x.points || 0), 0);
+        const userPre = preseasonData.find(p => p.uid === u.uid);
+        const preseason = u.preseasonPoints || userPre?.points || 0;
+        const winnerHits = a.reduce((s, x) => s + (x.winnerHits || 0), 0);
+        const difficultyHits = a.reduce((s, x) => s + (x.difficultyHits || 0), 0);
+        const total = +(regular + playoffs + preseason).toFixed(2);
+        return { uid: u.uid, name: u.name || u.email, regular, playoffs, preseason, total, winnerHits, difficultyHits };
       });
     }
 
-    if(mode==='preseason'){
-      return users.map(u=>{
-        const userPre=preseasonData.find(p=>p.uid===u.uid);
-        const preseason=u.preseasonPoints||userPre?.points||0;
-        return {uid:u.uid,name:u.name||u.email,regular:0,playoffs:0,preseason,total:+preseason.toFixed(2),winnerHits:0,difficultyHits:0};
+    if (mode === 'preseason') {
+      return users.map(u => {
+        const userPre = preseasonData.find(p => p.uid === u.uid);
+        const preseason = u.preseasonPoints || userPre?.points || 0;
+        return { uid: u.uid, name: u.name || u.email, regular: 0, playoffs: 0, preseason, total: +preseason.toFixed(2), winnerHits: 0, difficultyHits: 0 };
       });
     }
 
-    if(mode==='accumulated_regular'){
-      return users.map(u=>{
-        const a=scores.filter(x=>x.userId===u.uid&&(x.stage==='regular'||!x.stage));
-        const regular=a.reduce((s,x)=>s+(x.points||0),0);
-        const winnerHits=a.reduce((s,x)=>s+(x.winnerHits||0),0);
-        const difficultyHits=a.reduce((s,x)=>s+(x.difficultyHits||0),0);
-        return {uid:u.uid,name:u.name||u.email,regular,playoffs:0,preseason:0,total:+regular.toFixed(2),winnerHits,difficultyHits};
+    if (mode === 'accumulated_regular') {
+      return users.map(u => {
+        const a = scores.filter(x => x.userId === u.uid && (x.stage === 'regular' || !x.stage));
+        const regular = a.reduce((s, x) => s + (x.points || 0), 0);
+        const winnerHits = a.reduce((s, x) => s + (x.winnerHits || 0), 0);
+        const difficultyHits = a.reduce((s, x) => s + (x.difficultyHits || 0), 0);
+        return { uid: u.uid, name: u.name || u.email, regular, playoffs: 0, preseason: 0, total: +regular.toFixed(2), winnerHits, difficultyHits };
       });
     }
 
-    if(mode==='accumulated_playoffs'){
-      return users.map(u=>{
-        const a=scores.filter(x=>x.userId===u.uid&&x.stage==='playoffs');
-        const playoffs=a.reduce((s,x)=>s+(x.points||0),0);
-        const winnerHits=a.reduce((s,x)=>s+(x.winnerHits||0),0);
-        const difficultyHits=a.reduce((s,x)=>s+(x.difficultyHits||0),0);
-        return {uid:u.uid,name:u.name||u.email,regular:0,playoffs,preseason:0,total:+playoffs.toFixed(2),winnerHits,difficultyHits};
+    if (mode === 'accumulated_playoffs') {
+      return users.map(u => {
+        const a = scores.filter(x => x.userId === u.uid && x.stage === 'playoffs');
+        const playoffs = a.reduce((s, x) => s + (x.points || 0), 0);
+        const winnerHits = a.reduce((s, x) => s + (x.winnerHits || 0), 0);
+        const difficultyHits = a.reduce((s, x) => s + (x.difficultyHits || 0), 0);
+        return { uid: u.uid, name: u.name || u.email, regular: 0, playoffs, preseason: 0, total: +playoffs.toFixed(2), winnerHits, difficultyHits };
       });
     }
 
-    const[stage,w]=mode.split('_');
-    return users.map(u=>{
-      const x=scores.find(s=>s.userId===u.uid&&(s.stage===stage||(stage==='regular'&&!s.stage))&&s.week===+w);
-      const points=x?.points||0;
-      return{
-        uid:u.uid,
-        name:u.name||u.email,
-        regular:stage==='regular'?points:0,
-        playoffs:stage==='playoffs'?points:0,
-        preseason:0,
-        total:points,
+    const [stage, w] = mode.split('_');
+    return users.map(u => {
+      const x = scores.find(s => s.userId === u.uid && (s.stage === stage || (stage === 'regular' && !s.stage)) && s.week === +w);
+      const points = x?.points || 0;
+      return {
+        uid: u.uid,
+        name: u.name || u.email,
+        regular: stage === 'regular' ? points : 0,
+        playoffs: stage === 'playoffs' ? points : 0,
+        preseason: 0,
+        total: points,
         points,
-        winnerHits:x?.winnerHits||0,
-        difficultyHits:x?.difficultyHits||0
+        winnerHits: x?.winnerHits || 0,
+        difficultyHits: x?.difficultyHits || 0
       };
     });
   },
 
-  async load(mode){
-    const box=document.querySelector('#ranking'),awardsBox=document.querySelector('#awards'),detail=document.querySelector('#round-details');
-    box.textContent='Carregando...';
-    awardsBox.innerHTML='';
-    detail.innerHTML='';
-    try{
-      const data=await this.source();
-      const f=Bolao.Finance.summary(data.users);
-      const rows=this.rows(data.users,data.scores,mode,data.preseason).sort((a,b)=>Bolao.Finance.compare(a,b));
-      
-      document.querySelector('#finance-summary').innerHTML=`
+  async load(mode) {
+    const box = document.querySelector('#ranking'), awardsBox = document.querySelector('#awards'), detail = document.querySelector('#round-details');
+    box.textContent = 'Carregando...';
+    awardsBox.innerHTML = '';
+    detail.innerHTML = '';
+    try {
+      const data = await this.source();
+      const f = Bolao.Finance.summary(data.users);
+
+      document.querySelector('#finance-summary').innerHTML = `
         <div class="card"><div class="muted">Participantes ativos</div><div class="metric">${f.participants}</div></div>
         <div class="card"><div class="muted">Arrecadação</div><div class="metric">${Bolao.Finance.money(f.total)}</div></div>
         <div class="card"><div class="muted">Prêmio por rodada</div><div class="metric">${Bolao.Finance.money(f.roundPrize)}</div></div>
       `;
 
-      box.innerHTML=`
+      if (mode === 'preseason') {
+        const { gabarito, rows } = await this.loadPreseasonMatrix(data.users, data.preseason);
+        const gabaritoRow = `
+          <tr class="gabarito-row" data-is-gabarito="true" style="background:rgba(255,255,255,0.06);border-bottom:2px solid rgba(255,255,255,0.15)">
+            <td>★</td>
+            <td><b>Gabarito Oficial</b></td>
+            <td><b>—</b></td>
+            <td><b>—</b></td>
+            ${this.preseasonColumns.map(col => {
+              const val = gabarito[col.key];
+              const isPend = !val || this.normalizarTexto(val) === 'pendente';
+              return `<td><small class="${isPend ? 'muted' : ''}">${isPend ? 'Pendente' : val}</small></td>`;
+            }).join('')}
+          </tr>
+        `;
+
+        box.innerHTML = `
+          <div class="table-wrap" style="overflow-x:auto">
+            <table style="white-space:nowrap">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Participante</th>
+                  <th>Total</th>
+                  <th>Acertos / Erros</th>
+                  ${this.preseasonColumns.map(col => `<th>${col.label}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${gabaritoRow}
+                ${rows.map((r, i) => `
+                  <tr class="${r.uid === Bolao.Auth.user.uid ? 'me' : ''}">
+                    <td class="rank">${i + 1}</td>
+                    <td><b>${r.name}</b></td>
+                    <td><b>${r.total.toFixed(2)}</b></td>
+                    <td><span style="color:#27ae60">${r.acertos}✓</span> / <span style="color:#e74c3c">${r.erros}✕</span></td>
+                    ${this.preseasonColumns.map(col => {
+                      const item = r.items[col.key];
+                      if (!item.temOficial) {
+                        return `<td><div>${item.palpite}</div><small class="muted">0 pts (Aguardando)</small></td>`;
+                      }
+                      const badge = item.acertou
+                        ? `<small style="color:#27ae60;font-weight:bold">+${item.pts} pts ✓</small>`
+                        : `<small style="color:#e74c3c">0 pts ✕</small>`;
+                      return `<td><div>${item.palpite}</div>${badge}</td>`;
+                    }).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+        this.renderAwards(mode, data, rows, f);
+        return;
+      }
+
+      const rows = this.rows(data.users, data.scores, mode, data.preseason).sort((a, b) => Bolao.Finance.compare(a, b));
+
+      box.innerHTML = `
         <div class="table-wrap">
           <table>
             <thead>
               <tr><th>#</th><th>Participante</th><th>Regular</th><th>Playoffs</th><th>Pré</th><th>Total</th><th>Vencedores</th><th>VD/VF</th></tr>
             </thead>
             <tbody>
-              ${rows.map((r,i)=>`
-                <tr class="${r.uid===Bolao.Auth.user.uid?'me':''}">
-                  <td class="rank">${i+1}</td>
+              ${rows.map((r, i) => `
+                <tr class="${r.uid === Bolao.Auth.user.uid ? 'me' : ''}">
+                  <td class="rank">${i + 1}</td>
                   <td>${r.name}</td>
                   <td>${r.regular.toFixed(2)}</td>
                   <td>${r.playoffs.toFixed(2)}</td>
@@ -141,76 +305,76 @@ Bolao.Ranking={
         </div>
       `;
 
-      this.renderAwards(mode,data,rows,f);
-      if(mode.includes('_') && mode!=='accumulated_regular' && mode!=='accumulated_playoffs'){
+      this.renderAwards(mode, data, rows, f);
+      if (mode.includes('_') && mode !== 'accumulated_regular' && mode !== 'accumulated_playoffs') {
         await this.details(mode);
       }
-    }catch(e){
-      box.textContent='Erro ao carregar ranking: '+e.message;
+    } catch (e) {
+      box.textContent = 'Erro ao carregar ranking: ' + e.message;
     }
   },
 
-  renderAwards(mode,data,rows,f){
-    const box=document.querySelector('#awards');
-    const {users, scores, roundResults}=data;
+  renderAwards(mode, data, rows, f) {
+    const box = document.querySelector('#awards');
+    const { users, scores, roundResults } = data;
 
-    if(mode==='general'){
-      const regularRows=this.rows(users,scores,'accumulated_regular',data.preseason).sort((a,b)=>Bolao.Finance.compare(a,b));
-      const playoffRows=this.rows(users,scores,'accumulated_playoffs',data.preseason).sort((a,b)=>Bolao.Finance.compare(a,b));
-      
-      const regAwards=Bolao.Finance.accumulatedAwards(regularRows,f.regularPool);
-      const playAwards=Bolao.Finance.accumulatedAwards(playoffRows,f.playoffPool);
-      const finalAwards=Bolao.Finance.finalAwards(rows,f.finalPool,f.percentages);
+    if (mode === 'general') {
+      const regularRows = this.rows(users, scores, 'accumulated_regular', data.preseason).sort((a, b) => Bolao.Finance.compare(a, b));
+      const playoffRows = this.rows(users, scores, 'accumulated_playoffs', data.preseason).sort((a, b) => Bolao.Finance.compare(a, b));
 
-      const hasPlayoffPoints=playoffRows.some(r=>r.playoffs>0);
+      const regAwards = Bolao.Finance.accumulatedAwards(regularRows, f.regularPool);
+      const playAwards = Bolao.Finance.accumulatedAwards(playoffRows, f.playoffPool);
+      const finalAwards = Bolao.Finance.finalAwards(rows, f.finalPool, f.percentages);
 
-      const weekWinnersList=[];
-      for(let i=1; i<=18; i++){
-        const res=roundResults.find(r=>r.id===`${BOLAO_CONFIG.season}_regular_${i}` || r.id===`${BOLAO_CONFIG.season}_${i}`);
-        if(res && res.scores && res.scores.length){
-          const sortedScores=[...res.scores].sort((a,b)=>b.weekPoints-a.weekPoints);
-          const topPts=sortedScores[0].weekPoints;
-          if(topPts>0){
-            const winners=sortedScores.filter(s=>s.weekPoints===topPts).map(s=>s.name).join(', ');
-            weekWinnersList.push(`<tr><td>Semana ${i}</td><td>${winners}</td><td>${Bolao.Finance.money(f.roundPrize / sortedScores.filter(s=>s.weekPoints===topPts).length)} cada</td></tr>`);
+      const hasPlayoffPoints = playoffRows.some(r => r.playoffs > 0);
+
+      const weekWinnersList = [];
+      for (let i = 1; i <= 18; i++) {
+        const res = roundResults.find(r => r.id === `${BOLAO_CONFIG.season}_regular_${i}` || r.id === `${BOLAO_CONFIG.season}_${i}`);
+        if (res && res.scores && res.scores.length) {
+          const sortedScores = [...res.scores].sort((a, b) => b.weekPoints - a.weekPoints);
+          const topPts = sortedScores[0].weekPoints;
+          if (topPts > 0) {
+            const winners = sortedScores.filter(s => s.weekPoints === topPts).map(s => s.name).join(', ');
+            weekWinnersList.push(`<tr><td>Semana ${i}</td><td>${winners}</td><td>${Bolao.Finance.money(f.roundPrize / sortedScores.filter(s => s.weekPoints === topPts).length)} cada</td></tr>`);
           }
         }
       }
-      const playoffNames=['Wild Card','Divisional','Finais de Conferência','Super Bowl'];
-      for(let i=1; i<=3; i++){
-        const res=roundResults.find(r=>r.id===`${BOLAO_CONFIG.season}_playoffs_${i}`);
-        if(res && res.scores && res.scores.length){
-          const sortedScores=[...res.scores].sort((a,b)=>b.weekPoints-a.weekPoints);
-          const topPts=sortedScores[0].weekPoints;
-          if(topPts>0){
-            const winners=sortedScores.filter(s=>s.weekPoints===topPts).map(s=>s.name).join(', ');
-            weekWinnersList.push(`<tr><td>${playoffNames[i-1]}</td><td>${winners}</td><td>${Bolao.Finance.money(f.roundPrize / sortedScores.filter(s=>s.weekPoints===topPts).length)} cada</td></tr>`);
+      const playoffNames = ['Wild Card', 'Divisional', 'Finais de Conferência', 'Super Bowl'];
+      for (let i = 1; i <= 3; i++) {
+        const res = roundResults.find(r => r.id === `${BOLAO_CONFIG.season}_playoffs_${i}`);
+        if (res && res.scores && res.scores.length) {
+          const sortedScores = [...res.scores].sort((a, b) => b.weekPoints - a.weekPoints);
+          const topPts = sortedScores[0].weekPoints;
+          if (topPts > 0) {
+            const winners = sortedScores.filter(s => s.weekPoints === topPts).map(s => s.name).join(', ');
+            weekWinnersList.push(`<tr><td>${playoffNames[i - 1]}</td><td>${winners}</td><td>${Bolao.Finance.money(f.roundPrize / sortedScores.filter(s => s.weekPoints === topPts).length)} cada</td></tr>`);
           }
         }
       }
 
-      const financialSummary=users.map(u=>{
-        let prizeTotal=0;
-        const finalMatch=finalAwards.find(x=>x.name===(u.name||u.email));
-        if(finalMatch) prizeTotal+=finalMatch.amount;
+      const financialSummary = users.map(u => {
+        let prizeTotal = 0;
+        const finalMatch = finalAwards.find(x => x.name === (u.name || u.email));
+        if (finalMatch) prizeTotal += finalMatch.amount;
 
-        const regMatch=regAwards.find(x=>x.name===(u.name||u.email));
-        if(regMatch) prizeTotal+=regMatch.amount;
+        const regMatch = regAwards.find(x => x.name === (u.name || u.email));
+        if (regMatch) prizeTotal += regMatch.amount;
 
-        if(hasPlayoffPoints){
-          const playMatch=playAwards.find(x=>x.name===(u.name||u.email));
-          if(playMatch) prizeTotal+=playMatch.amount;
+        if (hasPlayoffPoints) {
+          const playMatch = playAwards.find(x => x.name === (u.name || u.email));
+          if (playMatch) prizeTotal += playMatch.amount;
         }
 
-        roundResults.forEach(res=>{
-          if(res.scores && res.scores.length){
-            const sorted=[...res.scores].sort((a,b)=>b.weekPoints-a.weekPoints);
-            const top=sorted[0].weekPoints;
-            if(top>0){
-              const winners=sorted.filter(s=>s.weekPoints===top);
-              const isWinner=winners.some(s=>s.uid===u.uid || s.name===(u.name||u.email));
-              if(isWinner){
-                if(!res.id.includes('playoffs_4')){
+        roundResults.forEach(res => {
+          if (res.scores && res.scores.length) {
+            const sorted = [...res.scores].sort((a, b) => b.weekPoints - a.weekPoints);
+            const top = sorted[0].weekPoints;
+            if (top > 0) {
+              const winners = sorted.filter(s => s.weekPoints === top);
+              const isWinner = winners.some(s => s.uid === u.uid || s.name === (u.name || u.email));
+              if (isWinner) {
+                if (!res.id.includes('playoffs_4')) {
                   prizeTotal += (f.roundPrize / winners.length);
                 }
               }
@@ -219,10 +383,10 @@ Bolao.Ranking={
         });
 
         const netBalance = prizeTotal - 100;
-        return { name: u.name||u.email, prizeTotal, netBalance };
-      }).sort((a,b)=>b.prizeTotal-a.prizeTotal);
+        return { name: u.name || u.email, prizeTotal, netBalance };
+      }).sort((a, b) => b.prizeTotal - a.prizeTotal);
 
-      box.innerHTML=`
+      box.innerHTML = `
         <h2>Premiação e Balanço Financeiro</h2>
 
         <h3>🏆 Classificação Geral (Final)</h3>
@@ -230,7 +394,7 @@ Bolao.Ranking={
           <table>
             <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
             <tbody>
-              ${finalAwards.length ? finalAwards.map((x,i)=>`<tr><td><b>${i+1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
+              ${finalAwards.length ? finalAwards.map((x, i) => `<tr><td><b>${i + 1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -240,7 +404,7 @@ Bolao.Ranking={
           <table>
             <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
             <tbody>
-              ${regAwards.length ? regAwards.map((x,i)=>`<tr><td><b>${i+1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
+              ${regAwards.length ? regAwards.map((x, i) => `<tr><td><b>${i + 1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -250,7 +414,7 @@ Bolao.Ranking={
           <table>
             <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
             <tbody>
-              ${hasPlayoffPoints && playAwards.length ? playAwards.map((x,i)=>`<tr><td><b>${i+1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">Aguardando apuração dos playoffs</td></tr>'}
+              ${hasPlayoffPoints && playAwards.length ? playAwards.map((x, i) => `<tr><td><b>${i + 1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">Aguardando apuração dos playoffs</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -271,7 +435,7 @@ Bolao.Ranking={
           <table>
             <thead><tr><th>Participante</th><th>Total de Prêmios</th><th>Saldo Líquido (Receber / Pagar)</th></tr></thead>
             <tbody>
-              ${financialSummary.map(item=>`
+              ${financialSummary.map(item => `
                 <tr>
                   <td><b>${item.name}</b></td>
                   <td>${Bolao.Finance.money(item.prizeTotal)}</td>
@@ -293,87 +457,87 @@ Bolao.Ranking={
           </table>
         </div>
       `;
-    }else if(mode==='preseason'){
-      box.innerHTML=`
+    } else if (mode === 'preseason') {
+      box.innerHTML = `
         <h2>Pontuação da Pré-temporada</h2>
-        <p class="muted">Desempenho dos participantes nos palpites de longo prazo da pré-temporada.</p>
+        <p class="muted">Desempenho dos participantes nos palpites de longo prazo da pré-temporada (+5 pts por acerto).</p>
       `;
-    }else if(mode==='accumulated_regular'){
-      const reg=Bolao.Finance.accumulatedAwards(rows,f.regularPool);
-      box.innerHTML=`
+    } else if (mode === 'accumulated_regular') {
+      const reg = Bolao.Finance.accumulatedAwards(rows, f.regularPool);
+      box.innerHTML = `
         <h2>Premiação da Temporada Regular (Acumulado)</h2>
         <p>Fundo total da temporada regular: <strong>${Bolao.Finance.money(f.regularPool)}</strong></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
             <tbody>
-              ${reg.length ? reg.map((x,i)=>`<tr><td><b>${i+1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
+              ${reg.length ? reg.map((x, i) => `<tr><td><b>${i + 1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">A definir</td></tr>'}
             </tbody>
           </table>
         </div>
       `;
-    }else if(mode==='accumulated_playoffs'){
-      const play=Bolao.Finance.accumulatedAwards(rows,f.playoffPool);
-      box.innerHTML=`
+    } else if (mode === 'accumulated_playoffs') {
+      const play = Bolao.Finance.accumulatedAwards(rows, f.playoffPool);
+      box.innerHTML = `
         <h2>Premiação dos Playoffs (Acumulado)</h2>
         <p>Fundo total dos playoffs: <strong>${Bolao.Finance.money(f.playoffPool)}</strong></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Posição</th><th>Participante</th><th>Prêmio Estimado</th></tr></thead>
             <tbody>
-              ${rows.some(r=>r.playoffs>0) && play.length ? play.map((x,i)=>`<tr><td><b>${i+1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">Aguardando apuração dos playoffs</td></tr>'}
+              ${rows.some(r => r.playoffs > 0) && play.length ? play.map((x, i) => `<tr><td><b>${i + 1}º</b></td><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="3" class="muted">Aguardando apuração dos playoffs</td></tr>'}
             </tbody>
           </table>
         </div>
       `;
-    }else{
-      const[stage,w]=mode.split('_');
-      const eligible=stage==='regular'||(stage==='playoffs'&&+w<=3);
-      const a=eligible?Bolao.Finance.roundAwards(rows,f.roundPrize):[];
-      box.innerHTML=eligible?`
+    } else {
+      const [stage, w] = mode.split('_');
+      const eligible = stage === 'regular' || (stage === 'playoffs' && +w <= 3);
+      const a = eligible ? Bolao.Finance.roundAwards(rows, f.roundPrize) : [];
+      box.innerHTML = eligible ? `
         <h2>Prêmio da Rodada</h2>
         <p>Valor total do prêmio desta rodada: <strong>${Bolao.Finance.money(f.roundPrize)}</strong></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Participante</th><th>Prêmio da Rodada</th></tr></thead>
             <tbody>
-              ${a.length ? a.map(x=>`<tr><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="2" class="muted">A definir após a apuração da rodada.</td></tr>'}
+              ${a.length ? a.map(x => `<tr><td>${x.name}</td><td><b>${Bolao.Finance.money(x.amount)}</b></td></tr>`).join('') : '<tr><td colspan="2" class="muted">A definir após a apuração da rodada.</td></tr>'}
             </tbody>
           </table>
         </div>
-      `:`
+      ` : `
         <h2>Premiação da Etapa</h2>
         <p>O Super Bowl pontua nos playoffs e na classificação geral, mas não possui prêmio específico de rodada conforme o regulamento.</p>
       `;
     }
   },
 
-  async details(mode){
-    const[stage,w]=mode.split('_');
-    const ids=[`${BOLAO_CONFIG.season}_${stage}_${w}`,stage==='regular'?`${BOLAO_CONFIG.season}_${w}`:''];
-    let d=null;
-    for(const id of ids.filter(Boolean)){
-      const x=await Bolao.db.collection('roundResults').doc(id).get();
-      if(x.exists){d=x;break}
+  async details(mode) {
+    const [stage, w] = mode.split('_');
+    const ids = [`${BOLAO_CONFIG.season}_${stage}_${w}`, stage === 'regular' ? `${BOLAO_CONFIG.season}_${w}` : ''];
+    let d = null;
+    for (const id of ids.filter(Boolean)) {
+      const x = await Bolao.db.collection('roundResults').doc(id).get();
+      if (x.exists) { d = x; break; }
     }
-    const box=document.querySelector('#round-details');
-    if(!d){
-      box.innerHTML='<p class="muted">Esta etapa ainda não foi apurada.</p>';
+    const box = document.querySelector('#round-details');
+    if (!d) {
+      box.innerHTML = '<p class="muted">Esta etapa ainda não foi apurada.</p>';
       return;
     }
-    const x=d.data();
-    box.innerHTML=`
+    const x = d.data();
+    box.innerHTML = `
       <h2>Detalhamento da etapa</h2>
-       ${(x.scores||[]).map(s=>`
+      ${(x.scores || []).map(s => `
         <details>
           <summary><b>${s.name}</b> · ${s.weekPoints.toFixed(2)} pontos</summary>
           <div class="table-wrap">
             <table>
               <tr><th>Jogo</th><th>Palpite</th><th>Resultado</th><th>Pontos</th></tr>
-              ${s.details.map(g=>`
+              ${s.details.map(g => `
                 <tr>
                   <td>${g.away} × ${g.home}</td>
-                  <td>${g.pick?g.pick.winner+' '+g.pick.difficulty:'Sem palpite'}</td>
+                  <td>${g.pick ? g.pick.winner + ' ' + g.pick.difficulty : 'Sem palpite'}</td>
                   <td>${g.result.winner} ${g.result.difficulty}</td>
                   <td>${g.total.toFixed(2)}</td>
                 </tr>
